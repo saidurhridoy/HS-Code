@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DutyLens BD — Offline</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    .card {
+      max-width: 400px;
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid rgba(52, 211, 153, 0.28);
+      border-radius: 20px;
+      padding: 28px 24px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+    }
+    h1 { font-size: 20px; margin: 16px 0 8px; }
+    p { font-size: 13.5px; line-height: 1.6; color: #cbd5e1; margin: 0 0 14px; }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      margin-top: 8px;
+      background: #059669;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 14px;
+      text-decoration: none;
+      padding: 13px 20px;
+      border-radius: 12px;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">DUTYLENS BD · NBR CUSTOMS AI</span>
+    <h1>No Internet Connection</h1>
+    <p>Please check your Wi-Fi or mobile data connection to access live WCO HS2022 classification, NBR duty/VAT calculations, and cloud profile history.</p>
+    <p style="color:#94a3b8;font-size:12.5px;">ইন্টারনেট সংযোগ চালু করে নিচের বাটনে ট্যাপ করুন।</p>
+    <a class="btn" href="dutylens://retry">Retry Connection / পুনরায় চেষ্টা করুন</a>
+  </div>
+</body>
+</html>

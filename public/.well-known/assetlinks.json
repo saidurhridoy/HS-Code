@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dutylensbd.app",
+      "sha256_cert_fingerprints": [
+        "50:62:9E:B2:A5:C1:CD:CA:55:02:A9:7C:50:01:E0:06:89:C5:55:CB:49:4C:DB:4E:2D:12:D9:0A:6A:4C:D0:9C"
+      ]
+    }
+  }
+]
