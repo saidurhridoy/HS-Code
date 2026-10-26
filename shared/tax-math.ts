@@ -10,7 +10,7 @@ import {
   ValuationBreakdown,
   VatModelScenario,
   VatRebateComparison,
-} from './types';
+} from './types.js';
 
 export const DEFAULT_EXCHANGE_RATES_BDT: Record<SupportedCurrency, number> = {
   USD: 122.0,

@@ -73,3 +73,14 @@ npm start
 | `GET` | `/api/tariff/sections` | Retrieve all 21 WCO sections and 97 chapters |
 | `GET` | `/api/tariff/search` | Search/filter tariff entries (`q`, `section`, `chapter`, `curatedOnly`) |
 | `GET` | `/api/tariff/code/:code` | Lookup a specific 4-, 6-, or 8-digit HS code |
+| `GET` | `/api/cloud/status` | Live Supabase Cloud connection status & recent classification feed |
+| `POST` | `/api/assessments` | Save a shareable NBR duty & VAT assessment permalink (`dl-xxxxxx`) to Supabase |
+| `GET` | `/api/assessments/:slug` | Retrieve a saved cloud assessment permalink and hydrated tariff schedule |
+
+---
+
+## Cloud Deployment (Vercel + Supabase)
+
+- **Vercel Serverless + Edge CDN**: Configured out-of-the-box via `vercel.json` and `api/index.ts` (bundles `data/wco-hs2022.csv` & `data/wco-sections.csv` via `includeFiles: "data/**"`).
+- **Supabase Postgres**: Backed by RLS-protected tables (`public.tariff_curated_bct`, `public.shared_assessments`, and `public.classification_logs`) with graceful in-memory fallback when running offline.
+

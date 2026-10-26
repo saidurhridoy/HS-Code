@@ -3,15 +3,19 @@ import {
   ArrowLeft,
   Clock,
   CornerDownLeft,
+  Globe,
+  Link2,
   Loader2,
   Search,
   Sparkles,
+  X,
   Zap,
 } from 'lucide-react';
 import { calculateNbrAssessment, DEFAULT_EXCHANGE_RATES_BDT } from '@shared/tax-math';
 import {
   ClassificationCandidate,
   ClassificationResult,
+  CloudClassificationFeedItem,
   DomesticVatMode,
   ImporterRegime,
   Incoterm,
@@ -31,7 +35,14 @@ import { ActiveTab, Navbar } from '@/components/Navbar';
 import { NbrTaxCalculator } from '@/components/NbrTaxCalculator';
 import { TariffExplorer } from '@/components/TariffExplorer';
 import { TaxOptimizationAdvisor } from '@/components/TaxOptimizationAdvisor';
-import { classifyProductApi, fetchHealth, HealthStats } from '@/lib/api';
+import {
+  classifyProductApi,
+  createSharedAssessmentApi,
+  fetchCloudStatus,
+  fetchHealth,
+  fetchSharedAssessmentApi,
+  HealthStats,
+} from '@/lib/api';
 import { formatBdt, formatPct } from '@/lib/format';
 import { SAMPLE_PRODUCT_PRESETS, SampleProductPreset } from '@/lib/presets';
 
@@ -90,6 +101,16 @@ export const App: React.FC = () => {
   const [preferentialOrigin, setPreferentialOrigin] = useState<PreferentialOrigin>('none');
   const [domesticVatMode, setDomesticVatMode] = useState<DomesticVatMode>('standard_15');
   const [customOverrides, setCustomOverrides] = useState<Partial<NbrTaxRates>>({});
+  const [cloudFeed, setCloudFeed] = useState<CloudClassificationFeedItem[]>([]);
+  const [loadedShareSlug, setLoadedShareSlug] = useState<string | null>(null);
+
+  const refreshCloudFeed = () => {
+    fetchCloudStatus()
+      .then((st) => {
+        if (st?.recentClassifications) setCloudFeed(st.recentClassifications);
+      })
+      .catch(() => {});
+  };
 
   const saveLlmConfig = (next: LlmConfig) => {
     setLlmConfig(next);
@@ -124,6 +145,7 @@ export const App: React.FC = () => {
       nextInvoiceUsd?: number;
       nextQty?: number;
       nextRegime?: ImporterRegime;
+      skipCloudLog?: boolean;
     }
   ) => {
     const trimmed = targetQuery.trim();
@@ -154,6 +176,7 @@ export const App: React.FC = () => {
         incoterm,
         quantity: effectiveQty,
         llm: llmConfig,
+        skipCloudLog: opts?.skipCloudLog,
       });
       if (!res.primary.entry.sroEligibleCapitalMachinery && effectiveRegime === 'capital_machinery') {
         setRegime('commercial');
@@ -161,6 +184,9 @@ export const App: React.FC = () => {
       setClassification(res);
       setSelectedCandidate(res.primary);
       pushRecentHistory(res);
+      if (!opts?.skipCloudLog) {
+        refreshCloudFeed();
+      }
     } catch (err: any) {
       setError(err?.message || 'Unable to classify product.');
     } finally {
@@ -172,10 +198,87 @@ export const App: React.FC = () => {
     fetchHealth()
       .then(setHealth)
       .catch(() => {});
+    refreshCloudFeed();
+
+    const params = new URLSearchParams(window.location.search);
+    const shareSlug = params.get('share');
+    if (shareSlug) {
+      setLoading(true);
+      fetchSharedAssessmentApi(shareSlug)
+        .then(({ shared, entry }) => {
+          const syntheticCandidate: ClassificationCandidate = {
+            entry,
+            confidence: 99,
+            matchReasons: [`Loaded from Shared Cloud Assessment Link (#${shared.slug})`],
+            griRule: 'Shared NBR Cloud Costing Sheet',
+            whenToUse: `Shared assessment for ${entry.formattedHs8}`,
+          };
+          const syntheticAssessment = calculateNbrAssessment({
+            rates: entry.rates,
+            sroEligibleCapitalMachinery: entry.sroEligibleCapitalMachinery,
+            regime: shared.regime,
+            preferentialOrigin: shared.preferentialOrigin,
+            domesticVatMode: shared.domesticVatMode,
+            valuationMode: shared.valuationMode,
+            incoterm: shared.incoterm,
+            invoiceValue: shared.invoiceValue,
+            freightPercent: shared.freightPercent,
+            insurancePercent: shared.insurancePercent,
+            currency: shared.currency,
+            exchangeRateBdt: shared.exchangeRateBdt,
+            quantity: shared.quantity,
+            unit: entry.unit,
+          });
+          setQueryInput(shared.query || `${entry.formattedHs8} — ${entry.commercialName}`);
+          setInvoiceValue(shared.invoiceValue);
+          setCurrency(shared.currency);
+          setExchangeRateBdt(shared.exchangeRateBdt);
+          setIncoterm(shared.incoterm);
+          setValuationMode(shared.valuationMode);
+          setFreightPercent(shared.freightPercent);
+          setInsurancePercent(shared.insurancePercent);
+          setQuantity(shared.quantity);
+          setRegime(shared.regime);
+          setPreferentialOrigin(shared.preferentialOrigin);
+          setDomesticVatMode(shared.domesticVatMode);
+          setSelectedCandidate(syntheticCandidate);
+          setClassification({
+            query: shared.query || `${entry.formattedHs8} — ${entry.commercialName}`,
+            engineUsed: 'builtin-hybrid',
+            processingMs: 1,
+            primary: syntheticCandidate,
+            alternatives: [],
+            signals: {
+              materials: [],
+              productForm: 'Shared Cloud Costing',
+              endUse: null,
+              technicalSpecs: [],
+              normalizedTerms: [entry.formattedHs8],
+              detectedLanguage: 'en',
+            },
+            reasoningSummary: `Restored saved cloud duty & rebate sheet (#${shared.slug}) for ${entry.formattedHs8} (${entry.commercialName}).`,
+            ambiguityHints: [],
+            defaultAssessment: syntheticAssessment,
+          });
+          setLoadedShareSlug(shared.slug);
+        })
+        .catch(() => {
+          executeClassify(SAMPLE_PRODUCT_PRESETS[0].query, {
+            nextInvoiceUsd: SAMPLE_PRODUCT_PRESETS[0].defaultInvoiceUsd,
+            nextQty: SAMPLE_PRODUCT_PRESETS[0].defaultQty,
+            nextRegime: 'commercial',
+            skipCloudLog: true,
+          });
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
     executeClassify(SAMPLE_PRODUCT_PRESETS[0].query, {
       nextInvoiceUsd: SAMPLE_PRODUCT_PRESETS[0].defaultInvoiceUsd,
       nextQty: SAMPLE_PRODUCT_PRESETS[0].defaultQty,
       nextRegime: 'commercial',
+      skipCloudLog: true,
     });
   }, []);
 
@@ -308,6 +411,41 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleShareCloudLink = async (): Promise<string | null> => {
+    if (!activeEntry || !liveAssessment) return null;
+    try {
+      const saved = await createSharedAssessmentApi({
+        query: queryInput,
+        hs8: activeEntry.hs8,
+        invoiceValue,
+        currency,
+        exchangeRateBdt,
+        incoterm,
+        valuationMode,
+        freightPercent,
+        insurancePercent,
+        quantity,
+        regime,
+        preferentialOrigin,
+        domesticVatMode,
+        ttiPercent: liveAssessment.ttiPercent,
+        totalTaxBdt: liveAssessment.totalTaxBdt,
+        totalLandedBdt: liveAssessment.totalLandedCostBdt,
+      });
+      const url = `${window.location.origin}${window.location.pathname}?share=${saved.slug}`;
+      try {
+        window.history.replaceState({}, '', `?share=${saved.slug}`);
+      } catch {
+        // ignore
+      }
+      setLoadedShareSlug(saved.slug);
+      return url;
+    } catch (err: any) {
+      setError(err?.message || 'Could not create shared cloud link.');
+      return null;
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar
@@ -319,6 +457,33 @@ export const App: React.FC = () => {
       />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
+        {loadedShareSlug && activeTab === 'classifier' && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-2.5 text-xs text-emerald-900 no-print">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>
+                Viewing Shared Cloud Assessment{' '}
+                <strong className="font-mono">#{loadedShareSlug}</strong> — invoice valuation, NBR regime &amp; VAT rebate mode synced from Supabase Cloud.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadedShareSlug(null);
+                try {
+                  window.history.replaceState({}, '', window.location.pathname);
+                } catch {
+                  // ignore
+                }
+              }}
+              className="rounded-md p-1 text-emerald-700 hover:bg-emerald-100"
+              aria-label="Dismiss notice"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {activeTab === 'classifier' && (
           <div className="space-y-6">
             {/* Product Description AI Input Panel */}
@@ -402,27 +567,54 @@ export const App: React.FC = () => {
                 </div>
               </form>
 
-              {/* Recent Classification History */}
-              {recentHistory.length > 1 && (
+              {/* Recent & Cloud Classification History */}
+              {(recentHistory.length > 1 || cloudFeed.length > 0) && (
                 <div className="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
-                    <Clock className="h-3 w-3" />
-                    Recent:
-                  </span>
-                  {recentHistory.map((item) => (
-                    <button
-                      key={item.hs8}
-                      type="button"
-                      onClick={() => {
-                        setQueryInput(item.query);
-                        executeClassify(item.query);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-slate-100/80 px-2 py-0.5 text-[11px] text-slate-600 transition hover:bg-slate-200/80 hover:text-slate-900"
-                    >
-                      <span className="font-mono font-bold text-emerald-700">{item.hs8}</span>
-                      <span className="max-w-[140px] truncate">{item.commercialName}</span>
-                    </button>
-                  ))}
+                  {recentHistory.length > 1 && (
+                    <>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                        <Clock className="h-3 w-3" />
+                        Recent:
+                      </span>
+                      {recentHistory.map((item) => (
+                        <button
+                          key={item.hs8}
+                          type="button"
+                          onClick={() => {
+                            setQueryInput(item.query);
+                            executeClassify(item.query);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-slate-100/80 px-2 py-0.5 text-[11px] text-slate-600 transition hover:bg-slate-200/80 hover:text-slate-900"
+                        >
+                          <span className="font-mono font-bold text-emerald-700">{item.hs8}</span>
+                          <span className="max-w-[140px] truncate">{item.commercialName}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {cloudFeed.length > 0 && (
+                    <>
+                      <span className="ml-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                        <Globe className="h-3 w-3" />
+                        Live Cloud:
+                      </span>
+                      {cloudFeed.slice(0, 4).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setQueryInput(item.query);
+                            executeClassify(item.query);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-emerald-100 bg-emerald-50/60 px-2 py-0.5 text-[11px] text-emerald-900 transition hover:bg-emerald-100/70"
+                        >
+                          <span className="font-mono font-bold text-emerald-700">{item.hs8}</span>
+                          <span className="max-w-[130px] truncate">{item.commercialName}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </section>
@@ -475,6 +667,7 @@ export const App: React.FC = () => {
                       customOverrides={customOverrides}
                       onCustomOverridesChange={setCustomOverrides}
                       onScrollToOptimizer={scrollToOptimizerSection}
+                      onShareCloudLink={handleShareCloudLink}
                     />
                   </div>
                 </section>

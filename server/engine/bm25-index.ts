@@ -1,5 +1,5 @@
-import { TariffEntry } from '../../shared/types';
-import { AnalyzedQuery, simpleStem, tokenizeForSearch } from './nlp-analyzer';
+import { TariffEntry } from '../../shared/types.js';
+import { AnalyzedQuery, simpleStem, tokenizeForSearch } from './nlp-analyzer.js';
 
 interface DocPosting {
   docIdx: number;

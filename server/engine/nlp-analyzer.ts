@@ -1,4 +1,4 @@
-import { ExtractedProductSignals } from '../../shared/types';
+import { ExtractedProductSignals } from '../../shared/types.js';
 
 const STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'have', 'in', 'into',

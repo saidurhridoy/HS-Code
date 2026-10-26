@@ -88,4 +88,44 @@ describe('DutyLens BD REST API Integration', () => {
     const cBody = await cRes.json();
     expect(cBody.entry.hs8).toBe('85171300');
   });
+
+  it('POST /api/assessments & GET /api/assessments/:slug create and hydrate shareable cloud links', async () => {
+    const createRes = await fetch(`${baseUrl}/api/assessments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'Apple MacBook Air M3 Laptop',
+        hs8: '84713000',
+        invoiceValue: 12000,
+        currency: 'USD',
+        exchangeRateBdt: 122,
+        incoterm: 'CFR',
+        valuationMode: 'invoice_to_av',
+        freightPercent: 5,
+        insurancePercent: 1,
+        quantity: 10,
+        regime: 'commercial',
+        preferentialOrigin: 'none',
+        domesticVatMode: 'standard_15',
+        ttiPercent: 43,
+        totalTaxBdt: 641614,
+        totalLandedBdt: 2133790,
+      }),
+    });
+    expect(createRes.status).toBe(200);
+    const createdBody = await createRes.json();
+    expect(createdBody.shared.slug).toMatch(/^dl-/);
+
+    const getRes = await fetch(`${baseUrl}/api/assessments/${createdBody.shared.slug}`);
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.shared.hs8).toBe('84713000');
+    expect(getBody.shared.invoiceValue).toBe(12000);
+    expect(getBody.entry.formattedHs8).toBe('8471.30.00');
+
+    const statusRes = await fetch(`${baseUrl}/api/cloud/status`);
+    expect(statusRes.status).toBe(200);
+    const statusBody = await statusRes.json();
+    expect(Array.isArray(statusBody.recentClassifications)).toBe(true);
+  });
 });

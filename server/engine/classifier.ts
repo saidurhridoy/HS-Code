@@ -1,4 +1,4 @@
-import { calculateNbrAssessment, DEFAULT_EXCHANGE_RATES_BDT } from '../../shared/tax-math';
+import { calculateNbrAssessment, DEFAULT_EXCHANGE_RATES_BDT } from '../../shared/tax-math.js';
 import {
   AmbiguityHint,
   BatchClassificationResult,
@@ -11,10 +11,10 @@ import {
   LlmConfig,
   SupportedCurrency,
   TariffEntry,
-} from '../../shared/types';
-import { getTariffStore, TariffStore } from '../tariff/tariff-store';
-import { ScoredTariffCandidate, TariffBm25Index } from './bm25-index';
-import { AnalyzedQuery, analyzeProductQuery } from './nlp-analyzer';
+} from '../../shared/types.js';
+import { getTariffStore, TariffStore } from '../tariff/tariff-store.js';
+import { ScoredTariffCandidate, TariffBm25Index } from './bm25-index.js';
+import { AnalyzedQuery, analyzeProductQuery } from './nlp-analyzer.js';
 
 function computeConfidence(candidates: ScoredTariffCandidate[], idx: number): number {
   if (candidates.length === 0) return 0;

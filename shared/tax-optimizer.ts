@@ -1,4 +1,4 @@
-import { calculateNbrAssessment } from './tax-math';
+import { calculateNbrAssessment } from './tax-math.js';
 import {
   DutyReductionOpportunity,
   RebatePlaybookItem,
@@ -6,7 +6,7 @@ import {
   TaxAssessmentInput,
   TaxAssessmentResult,
   TaxOptimizationPlan,
-} from './types';
+} from './types.js';
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;

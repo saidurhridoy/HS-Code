@@ -1,6 +1,6 @@
 import express from 'express';
-import { calculateNbrAssessment, simulateDomesticVatComparison } from '../shared/tax-math';
-import { generateOptimizationPlan } from '../shared/tax-optimizer';
+import { calculateNbrAssessment, simulateDomesticVatComparison } from '../shared/tax-math.js';
+import { generateOptimizationPlan } from '../shared/tax-optimizer.js';
 import {
   BatchItemInput,
   ImporterRegime,
@@ -8,9 +8,16 @@ import {
   LlmConfig,
   SupportedCurrency,
   TaxAssessmentInput,
-} from '../shared/types';
-import { getClassificationEngine } from './engine/classifier';
-import { getTariffStore } from './tariff/tariff-store';
+} from '../shared/types.js';
+import { getClassificationEngine } from './engine/classifier.js';
+import {
+  createSharedAssessment,
+  getCloudStatusAndFeed,
+  getSharedAssessmentBySlug,
+  isSupabaseConfigured,
+  logClassificationEvent,
+} from './supabase-store.js';
+import { getTariffStore } from './tariff/tariff-store.js';
 
 export function createApiApp() {
   const app = express();
@@ -25,6 +32,7 @@ export function createApiApp() {
       ok: true,
       service: 'DutyLens BD — AI HS Code & NBR Tariff Engine',
       edition: 'WCO HS2022 + Bangladesh NBR Operative Tariff Schedule',
+      cloudConnected: isSupabaseConfigured(),
       stats: {
         totalTariffCodes: store.entries.length,
         sections: store.sections.length,
@@ -35,9 +43,28 @@ export function createApiApp() {
     });
   });
 
+  app.get('/api/cloud/status', async (_req, res) => {
+    try {
+      const status = await getCloudStatusAndFeed(6);
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to read cloud status' });
+    }
+  });
+
   app.post('/api/classify', async (req, res) => {
     try {
-      const { query, regime, invoiceValue, currency, exchangeRateBdt, incoterm, quantity, llm } = req.body || {};
+      const {
+        query,
+        regime,
+        invoiceValue,
+        currency,
+        exchangeRateBdt,
+        incoterm,
+        quantity,
+        llm,
+        skipCloudLog,
+      } = req.body || {};
       if (!query || typeof query !== 'string' || query.trim().length < 2) {
         res.status(400).json({ error: 'Please enter a product name or description (at least 2 characters).' });
         return;
@@ -52,6 +79,18 @@ export function createApiApp() {
         quantity: typeof quantity === 'number' ? quantity : undefined,
         llm: llm as LlmConfig | undefined,
       });
+
+      if (!skipCloudLog) {
+        await logClassificationEvent({
+          query: result.query,
+          hs8: result.primary.entry.formattedHs8,
+          commercialName: result.primary.entry.commercialName,
+          confidence: result.primary.confidence,
+          tti: result.defaultAssessment.ttiPercent,
+          regime: result.defaultAssessment.regime,
+          engineUsed: result.engineUsed,
+        });
+      }
 
       res.json(result);
     } catch (err: any) {
@@ -183,6 +222,63 @@ export function createApiApp() {
       return;
     }
     res.json({ entry });
+  });
+
+  app.post('/api/assessments', async (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.hs8 || typeof body.hs8 !== 'string') {
+        res.status(400).json({ error: 'Missing HS code for shared assessment.' });
+        return;
+      }
+      const entry = store.findByCode(body.hs8);
+      if (!entry) {
+        res.status(404).json({ error: `HS Code '${body.hs8}' not found.` });
+        return;
+      }
+
+      const saved = await createSharedAssessment({
+        query: body.query || null,
+        hs8: entry.hs8,
+        commercialName: entry.commercialName,
+        invoiceValue: Number(body.invoiceValue) || 0,
+        currency: body.currency || 'USD',
+        exchangeRateBdt: Number(body.exchangeRateBdt) || 122,
+        incoterm: body.incoterm || 'CFR',
+        valuationMode: body.valuationMode || 'invoice_to_av',
+        freightPercent: Number(body.freightPercent ?? 5),
+        insurancePercent: Number(body.insurancePercent ?? 1),
+        quantity: Number(body.quantity) || 1,
+        regime: body.regime || 'commercial',
+        preferentialOrigin: body.preferentialOrigin || 'none',
+        domesticVatMode: body.domesticVatMode || 'standard_15',
+        ttiPercent: Number(body.ttiPercent ?? entry.tti),
+        totalTaxBdt: Number(body.totalTaxBdt) || 0,
+        totalLandedBdt: Number(body.totalLandedBdt) || 0,
+      });
+
+      res.json({ shared: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to save cloud assessment' });
+    }
+  });
+
+  app.get('/api/assessments/:slug', async (req, res) => {
+    try {
+      const shared = await getSharedAssessmentBySlug(req.params.slug);
+      if (!shared) {
+        res.status(404).json({ error: 'Shared cloud assessment link not found.' });
+        return;
+      }
+      const entry = store.findByCode(shared.hs8);
+      if (!entry) {
+        res.status(404).json({ error: `HS Code '${shared.hs8}' not found in tariff schedule.` });
+        return;
+      }
+      res.json({ shared, entry });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to load cloud assessment' });
+    }
   });
 
   return app;

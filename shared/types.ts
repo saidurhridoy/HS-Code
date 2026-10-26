@@ -300,3 +300,38 @@ export interface SectionSummary {
     subheadingCount: number;
   }[];
 }
+
+export interface SharedAssessmentRecord {
+  slug: string;
+  query: string | null;
+  hs8: string;
+  commercialName: string;
+  invoiceValue: number;
+  currency: SupportedCurrency;
+  exchangeRateBdt: number;
+  incoterm: Incoterm;
+  valuationMode: ValuationMode;
+  freightPercent: number;
+  insurancePercent: number;
+  quantity: number;
+  regime: ImporterRegime;
+  preferentialOrigin: PreferentialOrigin;
+  domesticVatMode: DomesticVatMode;
+  ttiPercent: number;
+  totalTaxBdt: number;
+  totalLandedBdt: number;
+  createdAt: string;
+}
+
+export interface CloudClassificationFeedItem {
+  id: string;
+  query: string;
+  hs8: string;
+  commercialName: string;
+  confidence: number;
+  tti: number;
+  regime: ImporterRegime;
+  engineUsed: string;
+  createdAt: string;
+}
+

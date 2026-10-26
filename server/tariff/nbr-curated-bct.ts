@@ -1,4 +1,4 @@
-import { ComplianceRequirement, IpoStatus, NbrTaxRates } from '../../shared/types';
+import { ComplianceRequirement, IpoStatus, NbrTaxRates } from '../../shared/types.js';
 
 export interface CuratedBctSpec {
   hs6: string;

@@ -2,18 +2,24 @@ import {
   BatchClassificationResult,
   BatchItemInput,
   ClassificationResult,
+  CloudClassificationFeedItem,
+  DomesticVatMode,
   ImporterRegime,
   Incoterm,
   LlmConfig,
+  PreferentialOrigin,
   SectionSummary,
+  SharedAssessmentRecord,
   SupportedCurrency,
   TariffEntry,
+  ValuationMode,
 } from '@shared/types';
 
 export interface HealthStats {
   ok: boolean;
   service: string;
   edition: string;
+  cloudConnected?: boolean;
   stats: {
     totalTariffCodes: number;
     sections: number;
@@ -23,9 +29,23 @@ export interface HealthStats {
   };
 }
 
+export interface CloudStatusResponse {
+  connected: boolean;
+  provider: 'supabase' | 'memory-fallback';
+  recentClassifications: CloudClassificationFeedItem[];
+  totalClassifications: number;
+  totalSharedAssessments: number;
+}
+
 export async function fetchHealth(): Promise<HealthStats> {
   const res = await fetch('/api/health');
   if (!res.ok) throw new Error('Failed to load service health');
+  return res.json();
+}
+
+export async function fetchCloudStatus(): Promise<CloudStatusResponse> {
+  const res = await fetch('/api/cloud/status');
+  if (!res.ok) throw new Error('Failed to load cloud status');
   return res.json();
 }
 
@@ -38,6 +58,7 @@ export async function classifyProductApi(params: {
   incoterm?: Incoterm;
   quantity?: number;
   llm?: LlmConfig;
+  skipCloudLog?: boolean;
 }): Promise<ClassificationResult> {
   const res = await fetch('/api/classify', {
     method: 'POST',
@@ -95,3 +116,41 @@ export async function classifyBatchApi(params: {
   if (!res.ok) throw new Error(data?.error || 'Batch classification failed');
   return data as BatchClassificationResult;
 }
+
+export async function createSharedAssessmentApi(params: {
+  query?: string | null;
+  hs8: string;
+  invoiceValue: number;
+  currency: SupportedCurrency;
+  exchangeRateBdt: number;
+  incoterm: Incoterm;
+  valuationMode: ValuationMode;
+  freightPercent: number;
+  insurancePercent: number;
+  quantity: number;
+  regime: ImporterRegime;
+  preferentialOrigin: PreferentialOrigin;
+  domesticVatMode: DomesticVatMode;
+  ttiPercent: number;
+  totalTaxBdt: number;
+  totalLandedBdt: number;
+}): Promise<SharedAssessmentRecord> {
+  const res = await fetch('/api/assessments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Failed to save shared cloud assessment');
+  return data.shared as SharedAssessmentRecord;
+}
+
+export async function fetchSharedAssessmentApi(
+  slug: string
+): Promise<{ shared: SharedAssessmentRecord; entry: TariffEntry }> {
+  const res = await fetch(`/api/assessments/${encodeURIComponent(slug)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Shared assessment not found');
+  return data as { shared: SharedAssessmentRecord; entry: TariffEntry };
+}
+

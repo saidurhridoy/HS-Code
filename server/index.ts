@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import express from 'express';
-import { createApiApp } from './app';
+import { createApiApp } from './app.js';
 
 async function bootstrap() {
   const app = createApiApp();

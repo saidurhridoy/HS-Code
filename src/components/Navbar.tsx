@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Cpu, FileSpreadsheet, Scale, Sparkles, TrendingDown } from 'lucide-react';
+import { BookOpen, Cpu, Database, FileSpreadsheet, Scale, Sparkles, TrendingDown } from 'lucide-react';
 import { LlmConfig } from '@shared/types';
 import { HealthStats } from '@/lib/api';
 
@@ -108,8 +108,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* AI Engine Config Pill */}
+        {/* Cloud Sync + AI Engine Config Pill */}
         <div className="flex items-center gap-2">
+          {health?.cloudConnected && (
+            <span
+              title="Connected to Supabase Postgres Cloud (Shared Assessment Links & Live Tariff Sync)"
+              className="hidden items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 md:inline-flex"
+            >
+              <Database className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Cloud DB Live</span>
+            </span>
+          )}
           <button
             type="button"
             onClick={onOpenAiModal}

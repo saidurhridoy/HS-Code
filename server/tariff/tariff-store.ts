@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { computeNbrTtiPercent } from '../../shared/tax-math';
-import { SectionSummary, TariffEntry } from '../../shared/types';
-import { CHAPTER_PROFILES, HEADING_PROFILES } from './nbr-chapter-profiles';
-import { CURATED_BCT_ENTRIES, CuratedBctSpec } from './nbr-curated-bct';
+import { fileURLToPath } from 'node:url';
+import { computeNbrTtiPercent } from '../../shared/tax-math.js';
+import { SectionSummary, TariffEntry } from '../../shared/types.js';
+import { CHAPTER_PROFILES, HEADING_PROFILES } from './nbr-chapter-profiles.js';
+import { CURATED_BCT_ENTRIES, CuratedBctSpec } from './nbr-curated-bct.js';
 
 /**
  * Lightweight, zero-dependency RFC-4180 CSV parser handling quoted fields and escaped quotes.
@@ -95,6 +96,29 @@ function deriveFriendlyCommercialName(wcoDesc: string, headingDesc: string): str
   return truncated.charAt(0).toUpperCase() + truncated.slice(1);
 }
 
+function resolveDefaultDataDir(): string {
+  const candidates = [
+    path.resolve(process.cwd(), 'data'),
+    '/var/task/data',
+  ];
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    candidates.push(
+      path.resolve(here, '../../data'),
+      path.resolve(here, '../data'),
+      path.resolve(here, 'data')
+    );
+  } catch {
+    // ignore if import.meta.url unavailable
+  }
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'wco-hs2022.csv'))) {
+      return dir;
+    }
+  }
+  return candidates[0];
+}
+
 export class TariffStore {
   public readonly entries: TariffEntry[] = [];
   public readonly byHs8 = new Map<string, TariffEntry>();
@@ -103,7 +127,7 @@ export class TariffStore {
   public readonly chapters = new Map<string, { chapter: string; section: string; title: string }>();
   public readonly headings = new Map<string, { heading: string; chapter: string; title: string }>();
 
-  constructor(dataDir = path.resolve(process.cwd(), 'data')) {
+  constructor(dataDir = resolveDefaultDataDir()) {
     const sectionsRaw = fs.readFileSync(path.join(dataDir, 'wco-sections.csv'), 'utf8');
     const hsRaw = fs.readFileSync(path.join(dataDir, 'wco-hs2022.csv'), 'utf8');
 
