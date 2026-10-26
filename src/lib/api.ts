@@ -1,6 +1,7 @@
 import {
   BatchClassificationResult,
   BatchItemInput,
+  BusinessRole,
   ClassificationResult,
   CloudClassificationFeedItem,
   DomesticVatMode,
@@ -12,6 +13,8 @@ import {
   SharedAssessmentRecord,
   SupportedCurrency,
   TariffEntry,
+  UserProfile,
+  UserSavedQuery,
   ValuationMode,
 } from '@shared/types';
 
@@ -59,11 +62,17 @@ export async function classifyProductApi(params: {
   quantity?: number;
   llm?: LlmConfig;
   skipCloudLog?: boolean;
+  authToken?: string | null;
 }): Promise<ClassificationResult> {
+  const { authToken, ...bodyParams } = params;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
   const res = await fetch('/api/classify', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    headers,
+    body: JSON.stringify(bodyParams),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -153,4 +162,94 @@ export async function fetchSharedAssessmentApi(
   if (!res.ok) throw new Error(data?.error || 'Shared assessment not found');
   return data as { shared: SharedAssessmentRecord; entry: TariffEntry };
 }
+
+export async function signupApi(params: {
+  email: string;
+  password: string;
+  fullName: string;
+  companyName: string;
+  businessRole: BusinessRole;
+  mobileNumber: string;
+}): Promise<{ user: UserProfile; token: string }> {
+  const res = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Sign up failed');
+  return data as { user: UserProfile; token: string };
+}
+
+export async function loginApi(params: {
+  email: string;
+  password: string;
+}): Promise<{ user: UserProfile; token: string; savedQueries: UserSavedQuery[] }> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Login failed');
+  return data as { user: UserProfile; token: string; savedQueries: UserSavedQuery[] };
+}
+
+export async function fetchCurrentUserApi(
+  token: string
+): Promise<{ user: UserProfile; savedQueries: UserSavedQuery[] }> {
+  const res = await fetch('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Session expired');
+  return data as { user: UserProfile; savedQueries: UserSavedQuery[] };
+}
+
+export async function updateProfileApi(
+  token: string,
+  patch: {
+    fullName?: string;
+    companyName?: string;
+    businessRole?: BusinessRole;
+    mobileNumber?: string;
+  }
+): Promise<UserProfile> {
+  const res = await fetch('/api/auth/profile', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Failed to update profile');
+  return data.user as UserProfile;
+}
+
+export async function fetchUserSavedQueriesApi(token: string): Promise<UserSavedQuery[]> {
+  const res = await fetch('/api/profile/queries', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Failed to load saved queries');
+  return (data.savedQueries || []) as UserSavedQuery[];
+}
+
+export async function fetchTariffByCodeApi(code: string): Promise<TariffEntry> {
+  const res = await fetch(`/api/tariff/code/${encodeURIComponent(code)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'HS code not found');
+  return data.entry as TariffEntry;
+}
+
+export async function deleteUserSavedQueryApi(token: string, id: string): Promise<void> {
+  const res = await fetch(`/api/profile/queries/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to remove saved query');
+}
+
 

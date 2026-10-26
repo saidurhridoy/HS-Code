@@ -13,14 +13,16 @@ import {
   Sparkles,
   Tag,
 } from 'lucide-react';
-import { ClassificationCandidate, ClassificationResult } from '@shared/types';
+import { AppLanguage, ClassificationCandidate, ClassificationResult } from '@shared/types';
 import { formatPct } from '@/lib/format';
+import { formatIpoStatusLabel } from '@/lib/i18n';
 
 interface ClassificationCardProps {
   result: ClassificationResult;
   selectedCandidate: ClassificationCandidate;
   onSelectCandidate: (candidate: ClassificationCandidate) => void;
   onRefineQuery: (appendText: string) => void;
+  lang?: AppLanguage;
 }
 
 export const ClassificationCard: React.FC<ClassificationCardProps> = ({
@@ -28,7 +30,9 @@ export const ClassificationCard: React.FC<ClassificationCardProps> = ({
   selectedCandidate,
   onSelectCandidate,
   onRefineQuery,
+  lang = 'en',
 }) => {
+  const isBn = lang === 'bn';
   const [copiedCode, setCopiedCode] = useState(false);
   const { entry } = selectedCandidate;
   const isPrimarySelected = selectedCandidate.entry.hs8 === result.primary.entry.hs8;
@@ -69,10 +73,16 @@ export const ClassificationCard: React.FC<ClassificationCardProps> = ({
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300 ring-1 ring-inset ring-emerald-400/30">
                 <Sparkles className="h-3 w-3" />
-                {isPrimarySelected ? 'Primary AI Classification' : 'Selected Alternative Code'}
+                {isPrimarySelected
+                  ? isBn
+                    ? 'প্রধান প্রস্তাবিত এইচএস কোড'
+                    : 'Primary AI Classification'
+                  : isBn
+                    ? 'নির্বাচিত বিকল্প কোড'
+                    : 'Selected Alternative Code'}
               </span>
               <span className="rounded-full bg-white/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-200">
-                {selectedCandidate.confidence}% Match
+                {selectedCandidate.confidence}% {isBn ? 'নির্ভুলতা' : 'Match'}
               </span>
             </div>
             <span className="font-mono text-[11px] text-slate-300">
@@ -128,12 +138,14 @@ export const ClassificationCard: React.FC<ClassificationCardProps> = ({
           <div className="mb-2 flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
               <Layers className="h-3.5 w-3.5 text-emerald-600" />
-              Harmonized System Hierarchy
+              {isBn
+                ? 'শুল্ক শ্রেণিবিন্যাস (WCO → বাংলাদেশ কাস্টমস BCT)'
+                : 'Harmonized System Hierarchy'}
             </span>
             <span
               className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${ipoBadgeStyle}`}
             >
-              {entry.ipoStatus}
+              {formatIpoStatusLabel(entry.ipoStatus, lang)}
             </span>
           </div>
 
@@ -170,7 +182,9 @@ export const ClassificationCard: React.FC<ClassificationCardProps> = ({
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <h3 className="text-xs font-bold tracking-wider text-slate-700 uppercase">
-                AI Customs Classification Reasoning
+                {isBn
+                  ? 'এআই শুল্ক শ্রেণিবিন্যাস যুক্তি (WCO GRI Rules)'
+                  : 'AI Customs Classification Reasoning'}
               </h3>
               <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-600">
                 {selectedCandidate.griRule}
@@ -240,7 +254,9 @@ export const ClassificationCard: React.FC<ClassificationCardProps> = ({
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <h3 className="flex items-center gap-2 text-xs font-bold tracking-wider text-slate-800 uppercase">
             <FileCheck2 className="h-4 w-4 text-emerald-600" />
-            Bangladesh Import Policy (IPO) &amp; NBR SRO Notes
+            {isBn
+              ? 'আমদানি নীতি আদেশ (IPO), প্রয়োজনীয় NOC ও এনবিআর SRO নোট'
+              : 'Bangladesh Import Policy (IPO) & NBR SRO Notes'}
           </h3>
 
           {entry.compliance.length > 0 && (

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { calculateNbrAssessment, DEFAULT_EXCHANGE_RATES_BDT } from '@shared/tax-math';
 import {
+  AppLanguage,
+  BusinessRole,
   ClassificationCandidate,
   ClassificationResult,
   CloudClassificationFeedItem,
@@ -26,11 +28,15 @@ import {
   SupportedCurrency,
   TariffEntry,
   TaxAssessmentInput,
+  UserProfile,
+  UserSavedQuery,
   ValuationMode,
 } from '@shared/types';
 import { AiSettingsModal } from '@/components/AiSettingsModal';
+import { AuthModalMode, AuthProfileModal } from '@/components/AuthProfileModal';
 import { BatchInvoiceAnalyzer } from '@/components/BatchInvoiceAnalyzer';
 import { ClassificationCard } from '@/components/ClassificationCard';
+import { ExecutiveSummaryPanel } from '@/components/ExecutiveSummaryPanel';
 import { ActiveTab, Navbar } from '@/components/Navbar';
 import { NbrTaxCalculator } from '@/components/NbrTaxCalculator';
 import { TariffExplorer } from '@/components/TariffExplorer';
@@ -38,16 +44,26 @@ import { TaxOptimizationAdvisor } from '@/components/TaxOptimizationAdvisor';
 import {
   classifyProductApi,
   createSharedAssessmentApi,
+  deleteUserSavedQueryApi,
   fetchCloudStatus,
+  fetchCurrentUserApi,
   fetchHealth,
   fetchSharedAssessmentApi,
+  fetchTariffByCodeApi,
+  fetchUserSavedQueriesApi,
   HealthStats,
+  loginApi,
+  signupApi,
+  updateProfileApi,
 } from '@/lib/api';
 import { formatBdt, formatPct } from '@/lib/format';
+import { UI_STRINGS } from '@/lib/i18n';
 import { SAMPLE_PRODUCT_PRESETS, SampleProductPreset } from '@/lib/presets';
 
 const LLM_STORAGE_KEY = 'dutylens_bd_llm_config_v1';
 const HISTORY_STORAGE_KEY = 'dutylens_bd_recent_queries_v1';
+const LANG_STORAGE_KEY = 'dutylens_bd_lang_v1';
+const AUTH_TOKEN_STORAGE_KEY = 'dutylens_bd_auth_token_v1';
 
 interface RecentItem {
   query: string;
@@ -60,6 +76,42 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('classifier');
   const [health, setHealth] = useState<HealthStats | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+
+  // Bilingual UI Language (English / বাংলা)
+  const [lang, setLang] = useState<AppLanguage>(() => {
+    try {
+      const saved = localStorage.getItem(LANG_STORAGE_KEY);
+      if (saved === 'bn' || saved === 'en') return saved;
+    } catch {
+      // ignore
+    }
+    return 'en';
+  });
+
+  const handleChangeLang = (nextLang: AppLanguage) => {
+    setLang(nextLang);
+    try {
+      localStorage.setItem(LANG_STORAGE_KEY, nextLang);
+    } catch {
+      // ignore
+    }
+  };
+
+  // User Auth & Profile State
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [savedQueries, setSavedQueries] = useState<UserSavedQuery[]>([]);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('signup');
+
+  const t = UI_STRINGS[lang];
+  const isBn = lang === 'bn';
 
   const [llmConfig, setLlmConfig] = useState<LlmConfig>(() => {
     try {
@@ -177,6 +229,7 @@ export const App: React.FC = () => {
         quantity: effectiveQty,
         llm: llmConfig,
         skipCloudLog: opts?.skipCloudLog,
+        authToken,
       });
       if (!res.primary.entry.sroEligibleCapitalMachinery && effectiveRegime === 'capital_machinery') {
         setRegime('commercial');
@@ -186,12 +239,162 @@ export const App: React.FC = () => {
       pushRecentHistory(res);
       if (!opts?.skipCloudLog) {
         refreshCloudFeed();
+        if (authToken) {
+          fetchUserSavedQueriesApi(authToken)
+            .then(setSavedQueries)
+            .catch(() => {});
+        }
       }
     } catch (err: any) {
       setError(err?.message || 'Unable to classify product.');
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetchCurrentUserApi(authToken)
+      .then(({ user, savedQueries: queries }) => {
+        setCurrentUser(user);
+        setSavedQueries(queries);
+      })
+      .catch(() => {
+        setAuthToken(null);
+        setCurrentUser(null);
+        try {
+          localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+      });
+  }, [authToken]);
+
+  const persistSession = (token: string, user: UserProfile, queries: UserSavedQuery[] = []) => {
+    setAuthToken(token);
+    setCurrentUser(user);
+    setSavedQueries(queries);
+    try {
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSignup = async (params: {
+    email: string;
+    password: string;
+    fullName: string;
+    companyName: string;
+    businessRole: BusinessRole;
+    mobileNumber: string;
+  }) => {
+    const { user, token } = await signupApi(params);
+    persistSession(token, user, []);
+  };
+
+  const handleLogin = async (params: { email: string; password: string }) => {
+    const { user, token, savedQueries: queries } = await loginApi(params);
+    persistSession(token, user, queries);
+  };
+
+  const handleUpdateProfile = async (patch: {
+    fullName: string;
+    companyName: string;
+    businessRole: BusinessRole;
+    mobileNumber: string;
+  }) => {
+    if (!authToken) return;
+    const updated = await updateProfileApi(authToken, patch);
+    setCurrentUser(updated);
+  };
+
+  const handleLogout = () => {
+    setAuthToken(null);
+    setCurrentUser(null);
+    setSavedQueries([]);
+    try {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleLoadSavedQuery = async (q: UserSavedQuery) => {
+    try {
+      setLoading(true);
+      const entry = await fetchTariffByCodeApi(q.hs8);
+      const syntheticCandidate: ClassificationCandidate = {
+        entry,
+        confidence: q.confidence,
+        matchReasons: ['Restored from your Saved Profile Query History'],
+        griRule: 'Saved Profile Classification',
+        whenToUse: `Saved query for ${entry.formattedHs8}`,
+      };
+      const syntheticAssessment = calculateNbrAssessment({
+        rates: entry.rates,
+        sroEligibleCapitalMachinery: entry.sroEligibleCapitalMachinery,
+        regime: q.regime,
+        preferentialOrigin: q.preferentialOrigin,
+        domesticVatMode: q.domesticVatMode,
+        valuationMode: 'invoice_to_av',
+        incoterm: q.incoterm,
+        invoiceValue: q.invoiceValue,
+        freightPercent,
+        insurancePercent,
+        currency: q.currency,
+        exchangeRateBdt: q.exchangeRateBdt,
+        quantity: q.quantity,
+        unit: entry.unit,
+      });
+      setQueryInput(q.query);
+      setInvoiceValue(q.invoiceValue);
+      setCurrency(q.currency);
+      setExchangeRateBdt(q.exchangeRateBdt);
+      setIncoterm(q.incoterm);
+      setQuantity(q.quantity);
+      setRegime(q.regime);
+      setPreferentialOrigin(q.preferentialOrigin);
+      setDomesticVatMode(q.domesticVatMode);
+      setCustomOverrides({});
+      setSelectedCandidate(syntheticCandidate);
+      setClassification({
+        query: q.query,
+        engineUsed: 'builtin-hybrid',
+        processingMs: 1,
+        primary: syntheticCandidate,
+        alternatives: [],
+        signals: {
+          materials: [],
+          productForm: 'Saved Profile Query',
+          endUse: null,
+          technicalSpecs: [],
+          normalizedTerms: [entry.formattedHs8],
+          detectedLanguage: 'en',
+        },
+        reasoningSummary: `Restored "${q.query}" (${entry.formattedHs8} — ${entry.commercialName}) from your profile.`,
+        ambiguityHints: [],
+        defaultAssessment: syntheticAssessment,
+      });
+      setActiveTab('classifier');
+    } catch {
+      setQueryInput(q.query);
+      setActiveTab('classifier');
+      executeClassify(q.query, {
+        nextInvoiceUsd: q.invoiceValue,
+        nextQty: q.quantity,
+        nextRegime: q.regime,
+        skipCloudLog: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSavedQuery = async (id: string) => {
+    if (!authToken) return;
+    await deleteUserSavedQueryApi(authToken, id);
+    setSavedQueries((prev) => prev.filter((item) => item.id !== id));
   };
 
   useEffect(() => {
@@ -454,6 +657,14 @@ export const App: React.FC = () => {
         llmConfig={llmConfig}
         onOpenAiModal={() => setAiModalOpen(true)}
         health={health}
+        lang={lang}
+        onChangeLang={handleChangeLang}
+        user={currentUser}
+        savedQueriesCount={savedQueries.length}
+        onOpenAuthModal={(m) => {
+          setAuthModalMode(m);
+          setAuthModalOpen(true);
+        }}
       />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
@@ -462,8 +673,17 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <Link2 className="h-4 w-4 shrink-0 text-emerald-600" />
               <span>
-                Viewing Shared Cloud Assessment{' '}
-                <strong className="font-mono">#{loadedShareSlug}</strong> — invoice valuation, NBR regime &amp; VAT rebate mode synced from Supabase Cloud.
+                {isBn ? (
+                  <>
+                    শেয়ারকৃত ক্লাউড অ্যাসেসমেন্ট <strong className="font-mono">#{loadedShareSlug}</strong>{' '}
+                    লোড হয়েছে — ইনভয়েস মূল্য, লাইসেন্স ও ভ্যাট রেয়াত সেটিংস সংযুক্ত।
+                  </>
+                ) : (
+                  <>
+                    Viewing Shared Cloud Assessment{' '}
+                    <strong className="font-mono">#{loadedShareSlug}</strong> — invoice valuation, NBR regime &amp; VAT rebate mode synced from Supabase Cloud.
+                  </>
+                )}
               </span>
             </div>
             <button
@@ -491,16 +711,28 @@ export const App: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h1 className="text-base font-bold text-slate-900 sm:text-lg">
-                    Describe Your Import Product (English or বাংলা)
+                    {t.describeTitle}
                   </h1>
-                  <p className="text-xs text-slate-500">
-                    Include material, function, technical specs (e.g. engine cc, wattage, GSM, bulk vs retail pack) for exact 8-digit NBR HS classification, VAT/Duty breakdown &amp; legal tax-saving options.
-                  </p>
+                  <p className="text-xs text-slate-500">{t.describeSubtitle}</p>
                 </div>
-                <span className="hidden items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 sm:inline-flex">
-                  <Zap className="h-3 w-3 text-emerald-600" />
-                  <span>Ctrl + Enter to classify</span>
-                </span>
+                <div className="flex items-center gap-2">
+                  {currentUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthModalMode('profile');
+                        setAuthModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-600/20 hover:bg-emerald-100"
+                    >
+                      <span>✓ {t.savedInProfileBadge}</span>
+                    </button>
+                  )}
+                  <span className="hidden items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 sm:inline-flex">
+                    <Zap className="h-3 w-3 text-emerald-600" />
+                    <span>{t.ctrlEnterHint}</span>
+                  </span>
+                </div>
               </div>
 
               <form
@@ -521,7 +753,11 @@ export const App: React.FC = () => {
                         executeClassify(queryInput);
                       }
                     }}
-                    placeholder="Example: 100% cotton knitted men's t-shirt 180 GSM, or Monocrystalline 550W solar PV panel, or ইন্ডাস্ট্রিয়াল সুইং মেশিন..."
+                    placeholder={
+                      isBn
+                        ? 'উদাহরণ: ১০০% সুতি নিটেড টি-শার্ট ১৮০ GSM, অথবা 550W সোলার প্যানেল, অথবা ইন্ডাস্ট্রিয়াল সুইং মেশিন...'
+                        : "Example: 100% cotton knitted men's t-shirt 180 GSM, or Monocrystalline 550W solar PV panel, or ইন্ডাস্ট্রিয়াল সুইং মেশিন..."
+                    }
                     className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50/40 p-3.5 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/15 focus:outline-none"
                   />
                 </div>
@@ -532,7 +768,7 @@ export const App: React.FC = () => {
                   {/* Sample Product Quick-Test Pills */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="mr-1 text-[11px] font-semibold text-slate-500">
-                      Try sample:
+                      {t.trySample}
                     </span>
                     {SAMPLE_PRODUCT_PRESETS.map((preset) => (
                       <button
@@ -554,12 +790,12 @@ export const App: React.FC = () => {
                     {loading ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Analyzing Tariff...</span>
+                        <span>{t.analyzingBtn}</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="h-4 w-4" />
-                        <span>Find HS Code &amp; Import Tax</span>
+                        <span>{t.classifyBtn}</span>
                         <CornerDownLeft className="h-3.5 w-3.5 opacity-75" />
                       </>
                     )}
@@ -574,7 +810,7 @@ export const App: React.FC = () => {
                     <>
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
                         <Clock className="h-3 w-3" />
-                        Recent:
+                        {t.recentLabel}
                       </span>
                       {recentHistory.map((item) => (
                         <button
@@ -597,7 +833,7 @@ export const App: React.FC = () => {
                     <>
                       <span className="ml-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                         <Globe className="h-3 w-3" />
-                        Live Cloud:
+                        {t.liveCloudLabel}
                       </span>
                       {cloudFeed.slice(0, 4).map((item) => (
                         <button
@@ -635,6 +871,7 @@ export const App: React.FC = () => {
                         setSelectedCandidate(cand);
                       }}
                       onRefineQuery={handleRefineQuery}
+                      lang={lang}
                     />
                   </div>
 
@@ -668,6 +905,7 @@ export const App: React.FC = () => {
                       onCustomOverridesChange={setCustomOverrides}
                       onScrollToOptimizer={scrollToOptimizerSection}
                       onShareCloudLink={handleShareCloudLink}
+                      lang={lang}
                     />
                   </div>
                 </section>
@@ -678,6 +916,15 @@ export const App: React.FC = () => {
                   assessmentInput={assessmentInput}
                   assessment={liveAssessment}
                   onApplyQuickAction={handleApplyQuickAction}
+                />
+
+                {/* Bottom Time-Saving Summarize Button & Bilingual Technical Terms Explainer */}
+                <ExecutiveSummaryPanel
+                  lang={lang}
+                  onChangeLang={handleChangeLang}
+                  entry={activeEntry}
+                  assessmentInput={assessmentInput}
+                  assessment={liveAssessment}
                 />
               </>
             ) : (
@@ -744,6 +991,14 @@ export const App: React.FC = () => {
                 setActiveTab('classifier');
               }}
             />
+
+            <ExecutiveSummaryPanel
+              lang={lang}
+              onChangeLang={handleChangeLang}
+              entry={activeEntry}
+              assessmentInput={assessmentInput}
+              assessment={liveAssessment}
+            />
           </div>
         )}
 
@@ -761,11 +1016,9 @@ export const App: React.FC = () => {
       <footer className="mt-10 border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 no-print">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 sm:flex-row sm:px-6">
           <span>
-            <strong>DutyLens BD</strong> — WCO HS2022 + Bangladesh Customs (NBR) Import VAT, Duty &amp; Rebate Intelligence
+            <strong>{t.footerTitle}</strong>
           </span>
-          <span>
-            Note: Final customs &amp; rebate eligibility is governed by active NBR Operative Tariff Schedule (OTS), VAT &amp; SD Act 2012 &amp; Finance Act SROs.
-          </span>
+          <span>{t.footerNote}</span>
         </div>
       </footer>
 
@@ -774,6 +1027,21 @@ export const App: React.FC = () => {
         config={llmConfig}
         onSave={saveLlmConfig}
         onClose={() => setAiModalOpen(false)}
+      />
+
+      <AuthProfileModal
+        open={authModalOpen}
+        initialMode={authModalMode}
+        lang={lang}
+        user={currentUser}
+        savedQueries={savedQueries}
+        onClose={() => setAuthModalOpen(false)}
+        onSignup={handleSignup}
+        onLogin={handleLogin}
+        onUpdateProfile={handleUpdateProfile}
+        onLogout={handleLogout}
+        onLoadSavedQuery={handleLoadSavedQuery}
+        onDeleteSavedQuery={handleDeleteSavedQuery}
       />
     </div>
   );

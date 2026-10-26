@@ -3,12 +3,23 @@ import { calculateNbrAssessment, simulateDomesticVatComparison } from '../shared
 import { generateOptimizationPlan } from '../shared/tax-optimizer.js';
 import {
   BatchItemInput,
+  BusinessRole,
   ImporterRegime,
   Incoterm,
   LlmConfig,
   SupportedCurrency,
   TaxAssessmentInput,
 } from '../shared/types.js';
+import {
+  authenticateUser,
+  deleteUserSavedQuery,
+  getUserProfileById,
+  listUserSavedQueries,
+  registerUser,
+  saveUserQueryToProfile,
+  updateUserProfile,
+  verifyAuthToken,
+} from './auth-store.js';
 import { getClassificationEngine } from './engine/classifier.js';
 import {
   createSharedAssessment,
@@ -81,15 +92,39 @@ export function createApiApp() {
       });
 
       if (!skipCloudLog) {
-        await logClassificationEvent({
-          query: result.query,
-          hs8: result.primary.entry.formattedHs8,
-          commercialName: result.primary.entry.commercialName,
-          confidence: result.primary.confidence,
-          tti: result.defaultAssessment.ttiPercent,
-          regime: result.defaultAssessment.regime,
-          engineUsed: result.engineUsed,
-        });
+        const authPayload = verifyAuthToken(req.headers.authorization);
+        await Promise.all([
+          logClassificationEvent({
+            query: result.query,
+            hs8: result.primary.entry.formattedHs8,
+            commercialName: result.primary.entry.commercialName,
+            confidence: result.primary.confidence,
+            tti: result.defaultAssessment.ttiPercent,
+            regime: result.defaultAssessment.regime,
+            engineUsed: result.engineUsed,
+          }),
+          authPayload
+            ? saveUserQueryToProfile({
+                userId: authPayload.sub,
+                query: result.query,
+                hs8: result.primary.entry.hs8,
+                formattedHs8: result.primary.entry.formattedHs8,
+                commercialName: result.primary.entry.commercialName,
+                confidence: result.primary.confidence,
+                invoiceValue: result.defaultAssessment.valuation.invoiceValueForeign,
+                currency: result.defaultAssessment.valuation.currency,
+                exchangeRateBdt: result.defaultAssessment.valuation.exchangeRateBdt,
+                incoterm: (incoterm as Incoterm) || 'CFR',
+                quantity: result.defaultAssessment.quantity,
+                regime: result.defaultAssessment.regime,
+                preferentialOrigin: result.defaultAssessment.preferentialOrigin,
+                domesticVatMode: result.defaultAssessment.domesticVatMode,
+                ttiPercent: result.defaultAssessment.ttiPercent,
+                totalTaxBdt: result.defaultAssessment.totalTaxBdt,
+                totalLandedBdt: result.defaultAssessment.totalLandedCostBdt,
+              })
+            : Promise.resolve(null),
+        ]);
       }
 
       res.json(result);
@@ -278,6 +313,138 @@ export function createApiApp() {
       res.json({ shared, entry });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to load cloud assessment' });
+    }
+  });
+
+  // --- User Authentication & Profile Saved Queries ---
+  app.post('/api/auth/signup', async (req, res) => {
+    try {
+      const { email, password, fullName, companyName, businessRole, mobileNumber } = req.body || {};
+      const result = await registerUser({
+        email: String(email || ''),
+        password: String(password || ''),
+        fullName: String(fullName || ''),
+        companyName: String(companyName || ''),
+        businessRole: (businessRole as BusinessRole) || 'importer',
+        mobileNumber: String(mobileNumber || ''),
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Sign up failed' });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body || {};
+      const result = await authenticateUser({
+        email: String(email || ''),
+        password: String(password || ''),
+      });
+      const savedQueries = await listUserSavedQueries(result.user.id, 40);
+      res.json({ ...result, savedQueries });
+    } catch (err: any) {
+      res.status(401).json({ error: err?.message || 'Login failed' });
+    }
+  });
+
+  app.get('/api/auth/me', async (req, res) => {
+    try {
+      const payload = verifyAuthToken(req.headers.authorization);
+      if (!payload) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const user = await getUserProfileById(payload.sub);
+      if (!user) {
+        res.status(401).json({ error: 'User profile not found' });
+        return;
+      }
+      const savedQueries = await listUserSavedQueries(user.id, 40);
+      res.json({ user, savedQueries });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to load profile' });
+    }
+  });
+
+  app.patch('/api/auth/profile', async (req, res) => {
+    try {
+      const payload = verifyAuthToken(req.headers.authorization);
+      if (!payload) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const { fullName, companyName, businessRole, mobileNumber } = req.body || {};
+      const user = await updateUserProfile(payload.sub, {
+        fullName,
+        companyName,
+        businessRole,
+        mobileNumber,
+      });
+      res.json({ user });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to update profile' });
+    }
+  });
+
+  app.get('/api/profile/queries', async (req, res) => {
+    try {
+      const payload = verifyAuthToken(req.headers.authorization);
+      if (!payload) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const savedQueries = await listUserSavedQueries(payload.sub, 50);
+      res.json({ savedQueries });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to load saved queries' });
+    }
+  });
+
+  app.post('/api/profile/queries', async (req, res) => {
+    try {
+      const payload = verifyAuthToken(req.headers.authorization);
+      if (!payload) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const b = req.body || {};
+      const saved = await saveUserQueryToProfile({
+        userId: payload.sub,
+        query: String(b.query || ''),
+        hs8: String(b.hs8 || ''),
+        formattedHs8: String(b.formattedHs8 || b.hs8 || ''),
+        commercialName: String(b.commercialName || ''),
+        confidence: Number(b.confidence) || 90,
+        invoiceValue: Number(b.invoiceValue) || 0,
+        currency: b.currency || 'USD',
+        exchangeRateBdt: Number(b.exchangeRateBdt) || 122,
+        incoterm: b.incoterm || 'CFR',
+        quantity: Number(b.quantity) || 1,
+        regime: b.regime || 'commercial',
+        preferentialOrigin: b.preferentialOrigin || 'none',
+        domesticVatMode: b.domesticVatMode || 'standard_15',
+        ttiPercent: Number(b.ttiPercent) || 0,
+        totalTaxBdt: Number(b.totalTaxBdt) || 0,
+        totalLandedBdt: Number(b.totalLandedBdt) || 0,
+      });
+      res.json({ saved });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Failed to save query' });
+    }
+  });
+
+  app.delete('/api/profile/queries/:id', async (req, res) => {
+    try {
+      const payload = verifyAuthToken(req.headers.authorization);
+      if (!payload) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const deleted = await deleteUserSavedQuery(payload.sub, req.params.id);
+      res.json({ ok: deleted });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to delete query' });
     }
   });
 

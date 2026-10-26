@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_EXCHANGE_RATES_BDT } from '@shared/tax-math';
 import {
+  AppLanguage,
   DomesticVatMode,
   ImporterRegime,
   Incoterm,
@@ -60,6 +61,7 @@ interface NbrTaxCalculatorProps {
   onCustomOverridesChange: (overrides: Partial<NbrTaxRates>) => void;
   onScrollToOptimizer?: () => void;
   onShareCloudLink?: () => Promise<string | null>;
+  lang?: AppLanguage;
 }
 
 const TAX_BAR_COLORS: Record<string, string> = {
@@ -109,7 +111,9 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
   onCustomOverridesChange,
   onScrollToOptimizer,
   onShareCloudLink,
+  lang = 'en',
 }) => {
+  const isBn = lang === 'bn';
   const [customSroMode, setCustomSroMode] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [sharingLink, setSharingLink] = useState(false);
@@ -183,7 +187,9 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
             <div className="flex items-center gap-2">
               <Calculator className="h-4 w-4 text-emerald-600" />
               <h2 className="text-sm font-bold text-slate-900">
-                NBR Import VAT &amp; Duty Assessment
+                {isBn
+                  ? 'এনবিআর আমদানি ভ্যাট ও শুল্ক হিসাব (NBR Assessment)'
+                  : 'NBR Import VAT & Duty Assessment'}
               </h2>
             </div>
             <div className="flex items-center gap-2">
@@ -201,17 +207,19 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-slate-200/90 bg-white p-3.5">
               <div className="text-[11px] font-semibold text-slate-500 uppercase">
-                Total Tax Incidence (TTI)
+                {isBn ? 'মোট করভার (TTI)' : 'Total Tax Incidence (TTI)'}
               </div>
               <div className="mt-1 font-mono text-2xl font-extrabold text-emerald-700">
                 {formatPct(assessment.ttiPercent)}
               </div>
-              <div className="mt-0.5 text-[11px] text-slate-500">Compound % of AV</div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                {isBn ? 'AV-এর ওপর চক্রবৃদ্ধি করের হার' : 'Compound % of AV'}
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200/90 bg-white p-3.5">
               <div className="text-[11px] font-semibold text-slate-500 uppercase">
-                Total Duty &amp; VAT Payable
+                {isBn ? 'বন্দরে মোট প্রদেয় শুল্ক ও কর' : 'Total Duty & VAT Payable'}
               </div>
               <div className="mt-1 font-mono text-xl font-bold text-slate-900 sm:text-2xl">
                 {formatBdt(assessment.totalTaxBdt)}
@@ -225,7 +233,7 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
 
             <div className="col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 sm:col-span-1">
               <div className="text-[11px] font-semibold text-emerald-800 uppercase">
-                Total Landed Cost
+                {isBn ? 'মোট আমদানি খরচ (Landed Cost)' : 'Total Landed Cost'}
               </div>
               <div className="mt-1 font-mono text-xl font-bold text-emerald-950 sm:text-2xl">
                 {formatBdt(assessment.totalLandedCostBdt)}
@@ -684,29 +692,41 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
             <div>
               <div className="flex items-center gap-1 text-[11px] font-semibold text-blue-900">
                 <Info className="h-3.5 w-3.5 text-blue-600" />
-                <span>Recoverable Rebate / Credit</span>
+                <span>
+                  {isBn
+                    ? 'ফেরতযোগ্য ভ্যাট ও কর রেয়াত (Rebate)'
+                    : 'Recoverable Rebate / Credit'}
+                </span>
               </div>
               <div className="mt-1 font-mono text-base font-bold text-blue-800">
                 {formatBdt(assessment.rebateableTaxBdt, 2)}
               </div>
               <p className="mt-0.5 text-[10px] leading-relaxed text-blue-700/80">
                 {domesticVatMode === 'standard_15'
-                  ? 'Includes 15% VAT (Note-14) + AT (Note-31) + AIT (s.120).'
+                  ? isBn
+                    ? '১৫% ভ্যাট (নোট-১৪) + অগ্রিম কর AT (নোট-৩১) + অগ্রিম আয়কর AIT (ধারা ১২০) ফেরতযোগ্য।'
+                    : 'Includes 15% VAT (Note-14) + AT (Note-31) + AIT (s.120).'
                   : domesticVatMode === 'trade_5'
-                  ? '15% VAT blocked u/s 46! Only AT (Note-31) + AIT (s.120) recovered.'
-                  : 'Only AIT recoverable without active VAT registration.'}
+                    ? isBn
+                      ? '৫% ট্রেড ভ্যাটে ১৫% আমদানি ভ্যাট রেয়াত নেই! শুধু AT + AIT সমন্বয়যোগ্য।'
+                      : '15% VAT blocked u/s 46! Only AT (Note-31) + AIT (s.120) recovered.'
+                    : isBn
+                      ? 'সক্রিয় ভ্যাট নিবন্ধন ছাড়া শুধু AIT সমন্বয়যোগ্য।'
+                      : 'Only AIT recoverable without active VAT registration.'}
               </p>
             </div>
 
             <div className="border-t border-blue-200/60 pt-2.5 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-3.5">
               <div className="text-[11px] font-semibold text-slate-800">
-                Net Sunk Duty &amp; Unrecovered Tax
+                {isBn
+                  ? 'রেয়াত বাদে প্রকৃত শুল্ক খরচ (Net Sunk Duty)'
+                  : 'Net Sunk Duty & Unrecovered Tax'}
               </div>
               <div className="mt-1 font-mono text-base font-bold text-slate-900">
                 {formatBdt(assessment.netSunkDutyBdt, 2)}
               </div>
               <p className="mt-0.5 text-[10px] leading-relaxed text-slate-600">
-                Net cost after rebate:{' '}
+                {isBn ? 'রেয়াত পরবর্তী প্রকৃত খরচ:' : 'Net cost after rebate:'}{' '}
                 <span className="font-mono font-semibold text-slate-900">
                   {formatBdt(assessment.netLandedCostAfterRebateBdt)}
                 </span>
@@ -723,7 +743,11 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 transition hover:bg-emerald-100"
               >
                 <TrendingDown className="h-3.5 w-3.5 text-emerald-700" />
-                <span>How to Lower Tax &amp; Claim Rebate</span>
+                <span>
+                  {isBn
+                    ? 'কীভাবে শুল্ক কমাবেন ও ভ্যাট রেয়াত পাবেন'
+                    : 'How to Lower Tax & Claim Rebate'}
+                </span>
                 <ArrowDown className="h-3.5 w-3.5" />
               </button>
             )}
@@ -743,7 +767,15 @@ export const NbrTaxCalculator: React.FC<NbrTaxCalculatorProps> = ({
                   ) : (
                     <Share2 className="h-3.5 w-3.5 text-emerald-600" />
                   )}
-                  <span>{sharedUrl ? 'Link Copied' : 'Share Link'}</span>
+                  <span>
+                    {sharedUrl
+                      ? isBn
+                        ? 'লিংক কপি হয়েছে'
+                        : 'Link Copied'
+                      : isBn
+                        ? 'শেয়ার লিংক'
+                        : 'Share Link'}
+                  </span>
                 </button>
               )}
 

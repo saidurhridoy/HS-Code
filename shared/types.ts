@@ -335,3 +335,40 @@ export interface CloudClassificationFeedItem {
   createdAt: string;
 }
 
+export type AppLanguage = 'en' | 'bn';
+
+export type BusinessRole = 'importer' | 'exporter' | 'both';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  fullName: string;
+  companyName: string;
+  businessRole: BusinessRole;
+  mobileNumber: string;
+  createdAt: string;
+}
+
+export interface UserSavedQuery {
+  id: string;
+  userId: string;
+  query: string;
+  hs8: string;
+  formattedHs8: string;
+  commercialName: string;
+  confidence: number;
+  invoiceValue: number;
+  currency: SupportedCurrency;
+  exchangeRateBdt: number;
+  incoterm: Incoterm;
+  quantity: number;
+  regime: ImporterRegime;
+  preferentialOrigin: PreferentialOrigin;
+  domesticVatMode: DomesticVatMode;
+  ttiPercent: number;
+  totalTaxBdt: number;
+  totalLandedBdt: number;
+  createdAt: string;
+}
+
+

@@ -128,4 +128,72 @@ describe('DutyLens BD REST API Integration', () => {
     const statusBody = await statusRes.json();
     expect(Array.isArray(statusBody.recentClassifications)).toBe(true);
   });
+
+  it('User Sign Up, Login & Profile auto-saves classified queries with Company, Role & Mobile', async () => {
+    const signupRes = await fetch(`${baseUrl}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'trader@dhakacustoms.com',
+        password: 'securePassword123',
+        fullName: 'Saidur Rahman',
+        companyName: 'Dhaka Global Trade Ltd.',
+        businessRole: 'both',
+        mobileNumber: '+8801711223344',
+      }),
+    });
+    expect(signupRes.status).toBe(200);
+    const signupBody = await signupRes.json();
+    expect(signupBody.user.companyName).toBe('Dhaka Global Trade Ltd.');
+    expect(signupBody.user.businessRole).toBe('both');
+    expect(signupBody.user.mobileNumber).toBe('+8801711223344');
+    expect(typeof signupBody.token).toBe('string');
+
+    // Run a classification authenticated as this user — should auto-save to profile
+    const classifyRes = await fetch(`${baseUrl}/api/classify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${signupBody.token}`,
+      },
+      body: JSON.stringify({
+        query: 'Industrial Juki sewing machine for RMG factory',
+        invoiceValue: 25000,
+        currency: 'USD',
+        exchangeRateBdt: 122,
+        incoterm: 'CFR',
+        quantity: 20,
+        regime: 'capital_machinery',
+      }),
+    });
+    expect(classifyRes.status).toBe(200);
+
+    // Log in again and confirm saved query is attached to the user's profile
+    const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'trader@dhakacustoms.com',
+        password: 'securePassword123',
+      }),
+    });
+    expect(loginRes.status).toBe(200);
+    const loginBody = await loginRes.json();
+    expect(loginBody.user.companyName).toBe('Dhaka Global Trade Ltd.');
+    expect(loginBody.savedQueries.length).toBe(1);
+    expect(loginBody.savedQueries[0].hs8).toBe('84522900');
+
+    // Delete saved query
+    const delRes = await fetch(`${baseUrl}/api/profile/queries/${loginBody.savedQueries[0].id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${loginBody.token}` },
+    });
+    expect(delRes.status).toBe(200);
+
+    const afterListRes = await fetch(`${baseUrl}/api/profile/queries`, {
+      headers: { Authorization: `Bearer ${loginBody.token}` },
+    });
+    const afterListBody = await afterListRes.json();
+    expect(afterListBody.savedQueries.length).toBe(0);
+  });
 });
