@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DutyLens BD</string>
+    <color name="brand_dark">#064E3B</color>
+    <color name="brand_emerald">#059669</color>
+    <color name="ic_launcher_background">#064E3B</color>
+</resources>

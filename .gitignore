@@ -24,3 +24,11 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+# Release artifacts & private Android signing keystores (persisted in workspace, never pushed to public Git)
+releases/
+*.jks
+*.keystore
+keystore.properties
+android/.gradle/
+android/app/build/

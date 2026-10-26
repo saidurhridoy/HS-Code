@@ -1092,6 +1092,9 @@ export const App: React.FC = () => {
             <strong>{t.footerTitle}</strong>
           </span>
           <span>{t.footerNote}</span>
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="font-semibold text-emerald-700 hover:underline">
+            Privacy Policy · গোপনীয়তা নীতি
+          </a>
         </div>
       </footer>
 

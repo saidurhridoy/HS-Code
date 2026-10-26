@@ -1,0 +1,10 @@
+{
+  "name": "DutyLens BD — AI HS Code & NBR Tax Finder",
+  "short_name": "DutyLens BD",
+  "description": "AI-powered Bangladesh Customs (NBR) 8-digit HS Code Finder, Import Duty/VAT Calculator, Tax Rebate & Zero-Tax Optimizer.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#064E3B",
+  "theme_color": "#064E3B",
+  "orientation": "portrait-primary"
+}
