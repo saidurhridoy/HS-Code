@@ -5,6 +5,7 @@ import {
   simulateDomesticVatComparison,
 } from '../shared/tax-math';
 import { generateOptimizationPlan } from '../shared/tax-optimizer';
+import { generateAlternativeTradeIntelligence } from '../shared/trade-intelligence';
 import { TaxAssessmentInput } from '../shared/types';
 import { createApiApp } from '../server/app';
 import { getTariffStore } from '../server/tariff/tariff-store';
@@ -153,5 +154,37 @@ describe('Bangladesh NBR Technical Duty Reduction & VAT Rebate Engine', () => {
       expect(data.optimizationPlan.opportunities.length).toBeGreaterThan(0);
       expect(data.vatComparison.breakevenMarkupPercent).toBe(62.16);
     });
+  });
+
+  it('generates 4-Pillar Alternative Duty, Rebate Scope, Zero-Tax & Best Import Destination intelligence', () => {
+    // Vehicle test -> Mongla Sea Port should rank #1
+    const hybridCar = store.byHs8.get('87034012') || Array.from(store.byHs8.values()).find((e) => e.chapter === '87')!;
+    const carInput: TaxAssessmentInput = {
+      rates: hybridCar.rates,
+      regime: 'commercial',
+      preferentialOrigin: 'none',
+      domesticVatMode: 'standard_15',
+      valuationMode: 'invoice_to_av',
+      incoterm: 'CFR',
+      invoiceValue: 18000,
+      currency: 'USD',
+      exchangeRateBdt: 122,
+      quantity: 1,
+    };
+    const carAssm = calculateNbrAssessment(carInput);
+    const carIntel = generateAlternativeTradeIntelligence(hybridCar, null, carInput, carAssm);
+
+    expect(carIntel.alternativeDutyMatrix.length).toBeGreaterThanOrEqual(3);
+    expect(carIntel.rebateScope.recoverableLocalBdt).toBeGreaterThan(0);
+    expect(carIntel.zeroTaxOptions.some((z) => z.id === 'zero-epz-beza-hitech')).toBe(true);
+    expect(carIntel.portDestinations[0].id).toBe('port-mongla');
+    expect(carIntel.sourcingCorridors.length).toBe(6);
+    expect(carIntel.regionalBenchmarks.length).toBe(6);
+
+    // SAFTA India test -> Benapole Land Port should rank #1
+    const saftaInput: TaxAssessmentInput = { ...carInput, preferentialOrigin: 'safta' };
+    const saftaAssm = calculateNbrAssessment(saftaInput);
+    const saftaIntel = generateAlternativeTradeIntelligence(hybridCar, null, saftaInput, saftaAssm);
+    expect(saftaIntel.portDestinations[0].id).toBe('port-benapole-land');
   });
 });

@@ -371,4 +371,172 @@ export interface UserSavedQuery {
   createdAt: string;
 }
 
+export type SourceInputMode = 'text' | 'photo' | 'link';
+
+export type SourceExtractionMethod =
+  | 'vision-llm'
+  | 'webpage-metadata'
+  | 'url-slug-intelligence'
+  | 'image-metadata-heuristic';
+
+export interface ExtractedSourceMetadata {
+  sourceType: 'photo' | 'link';
+  extractedTitle: string;
+  extractedDescription: string;
+  synthesizedQuery: string;
+  detectedBrand?: string;
+  detectedCategory?: string;
+  detectedSpecs: string[];
+  detectedPrice?: number;
+  detectedCurrency?: SupportedCurrency;
+  detectedMarketplace?: string;
+  suggestedOriginCountry?: string;
+  suggestedPreferentialOrigin?: PreferentialOrigin;
+  extractionMethod: SourceExtractionMethod;
+  sourceUrl?: string;
+  imageFileName?: string;
+  confidenceNote: string;
+  needsUserHint?: boolean;
+}
+
+export interface AnalyzeSourceRequest {
+  mode: 'photo' | 'link';
+  url?: string;
+  imageBase64?: string;
+  imageMimeType?: string;
+  imageFileName?: string;
+  userHint?: string;
+  invoiceValue?: number;
+  currency?: SupportedCurrency;
+  exchangeRateBdt?: number;
+  incoterm?: Incoterm;
+  quantity?: number;
+  regime?: ImporterRegime;
+  llmConfig?: LlmConfig;
+}
+
+export interface AnalyzeSourceResponse {
+  sourceMeta: ExtractedSourceMetadata;
+  classification: ClassificationResult;
+}
+
+export interface AlternativeDutyScenario {
+  id: string;
+  title: string;
+  banglaTitle: string;
+  hs8: string;
+  formattedHs8: string;
+  regimeLabel: string;
+  banglaRegimeLabel: string;
+  ttiPercent: number;
+  totalTaxBdt: number;
+  rebateableBdt: number;
+  netSunkTaxBdt: number;
+  totalLandedBdt: number;
+  savingsVsCurrentBdt: number;
+  isCurrent: boolean;
+  eligibility: 'Active Now' | 'Direct Option' | 'Conditional License/Spec' | 'Zero-Tax Zone/Bond';
+  note: string;
+  banglaNote: string;
+  quickAction?: QuickOptimizationAction;
+  switchCandidate?: ClassificationCandidate;
+}
+
+export interface RebateScopeItem {
+  code: 'VAT' | 'AT' | 'AIT' | 'DEDO' | 'SUNK';
+  label: string;
+  banglaLabel: string;
+  amountBdt: number;
+  shareOfTotalTaxPercent: number;
+  recoverableForLocalSale: boolean;
+  recoverableForExport: boolean;
+  mechanism: string;
+  banglaMechanism: string;
+  condition: string;
+  banglaCondition: string;
+}
+
+export interface RebateScopeReport {
+  totalPortTaxBdt: number;
+  recoverableLocalBdt: number;
+  recoverableExportBdt: number;
+  unrecoverableSunkLocalBdt: number;
+  localRecoveryRatioPercent: number;
+  effectiveSunkRateOnAvPercent: number;
+  items: RebateScopeItem[];
+}
+
+export interface ZeroTaxPathway {
+  id: string;
+  title: string;
+  banglaTitle: string;
+  legalAuthority: string;
+  resultingTtiPercent: number;
+  resultingPortTaxBdt: number;
+  taxSavedBdt: number;
+  eligibilityBadge: 'Directly Eligible' | 'Export / Free-Zone License' | 'Origin / SRO Specific';
+  banglaEligibilityBadge: string;
+  eligibleForCurrentProduct: boolean;
+  summary: string;
+  banglaSummary: string;
+  requirements: string[];
+  banglaRequirements: string[];
+  quickAction?: QuickOptimizationAction;
+}
+
+export interface BangladeshPortOption {
+  id: string;
+  portName: string;
+  banglaPortName: string;
+  customsHouse: string;
+  mode: 'Sea' | 'Air' | 'Land' | 'Free-Zone' | 'ICD';
+  suitabilityScore: number;
+  recommended: boolean;
+  estimatedTransitDays: string;
+  clearanceSpeed: string;
+  estimatedFreightAdjustmentPct: number;
+  estimatedTotalLandedBdt: number;
+  bestForSummary: string;
+  banglaBestForSummary: string;
+}
+
+export interface GlobalSourcingCorridor {
+  id: string;
+  country: string;
+  banglaCountry: string;
+  agreementLabel: string;
+  preferentialOrigin: PreferentialOrigin;
+  effectiveCdPercent: number;
+  ttiPercent: number;
+  estimatedFreightPct: number;
+  totalTaxBdt: number;
+  estimatedLandedBdt: number;
+  savingsVsMfnBdt: number;
+  transitDays: string;
+  recommendedEntryPort: string;
+  recommended: boolean;
+  quickAction?: QuickOptimizationAction;
+}
+
+export interface RegionalHubBenchmark {
+  countryOrZone: string;
+  banglaCountryOrZone: string;
+  dutyRateLabel: string;
+  vatOrGstLabel: string;
+  estimatedEffectiveTaxPct: number;
+  estimatedTotalTaxBdt: number;
+  roleNote: string;
+  banglaRoleNote: string;
+  highlight?: boolean;
+}
+
+export interface AlternativeTradeIntelligenceReport {
+  alternativeDutyMatrix: AlternativeDutyScenario[];
+  rebateScope: RebateScopeReport;
+  zeroTaxOptions: ZeroTaxPathway[];
+  portDestinations: BangladeshPortOption[];
+  sourcingCorridors: GlobalSourcingCorridor[];
+  regionalBenchmarks: RegionalHubBenchmark[];
+}
+
 

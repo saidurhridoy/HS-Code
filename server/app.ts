@@ -21,6 +21,7 @@ import {
   verifyAuthToken,
 } from './auth-store.js';
 import { getClassificationEngine } from './engine/classifier.js';
+import { analyzeProductPhoto, analyzeProductUrl } from './engine/source-analyzer.js';
 import {
   createSharedAssessment,
   getCloudStatusAndFeed,
@@ -32,7 +33,7 @@ import { getTariffStore } from './tariff/tariff-store.js';
 
 export function createApiApp() {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '6mb' }));
 
   // Warm up store & BM25 index eagerly so first request is <10ms
   const store = getTariffStore();
@@ -130,6 +131,108 @@ export function createApiApp() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Classification failed' });
+    }
+  });
+
+  app.post('/api/analyze-source', async (req, res) => {
+    try {
+      const {
+        mode,
+        url,
+        imageBase64,
+        imageMimeType,
+        imageFileName,
+        userHint,
+        invoiceValue,
+        currency,
+        exchangeRateBdt,
+        incoterm,
+        quantity,
+        regime,
+        llmConfig,
+      } = req.body || {};
+
+      if (mode !== 'link' && mode !== 'photo') {
+        res.status(400).json({ error: 'Invalid source mode. Expected "link" or "photo".' });
+        return;
+      }
+
+      const sourceMeta =
+        mode === 'link'
+          ? await analyzeProductUrl(String(url || ''), typeof userHint === 'string' ? userHint : undefined)
+          : await analyzeProductPhoto(
+              String(imageBase64 || ''),
+              typeof imageMimeType === 'string' ? imageMimeType : undefined,
+              typeof imageFileName === 'string' ? imageFileName : undefined,
+              typeof userHint === 'string' ? userHint : undefined,
+              llmConfig as LlmConfig | undefined
+            );
+
+      const effectiveCurrency =
+        sourceMeta.detectedCurrency || (currency as SupportedCurrency | undefined) || 'USD';
+      const effectiveInvoice =
+        sourceMeta.detectedPrice && sourceMeta.detectedPrice > 0
+          ? sourceMeta.detectedPrice * (typeof quantity === 'number' && quantity > 0 ? quantity : 1)
+          : typeof invoiceValue === 'number'
+          ? invoiceValue
+          : undefined;
+
+      const classification = await engine.classify(sourceMeta.synthesizedQuery, {
+        regime: regime as ImporterRegime | undefined,
+        invoiceValue: effectiveInvoice,
+        currency: effectiveCurrency,
+        exchangeRateBdt: typeof exchangeRateBdt === 'number' ? exchangeRateBdt : undefined,
+        incoterm: incoterm as Incoterm | undefined,
+        quantity: typeof quantity === 'number' ? quantity : undefined,
+        llm: llmConfig as LlmConfig | undefined,
+      });
+
+      if (!sourceMeta.needsUserHint) {
+        const authPayload = verifyAuthToken(req.headers.authorization);
+        const queryLabel =
+          mode === 'link'
+            ? `[Link] ${sourceMeta.extractedTitle}`
+            : `[Photo] ${sourceMeta.extractedTitle}`;
+
+        await Promise.all([
+          logClassificationEvent({
+            query: queryLabel.slice(0, 220),
+            hs8: classification.primary.entry.formattedHs8,
+            commercialName: classification.primary.entry.commercialName,
+            confidence: classification.primary.confidence,
+            tti: classification.defaultAssessment.ttiPercent,
+            regime: classification.defaultAssessment.regime,
+            engineUsed: classification.engineUsed,
+          }),
+          authPayload
+            ? saveUserQueryToProfile({
+                userId: authPayload.sub,
+                query: queryLabel.slice(0, 220),
+                hs8: classification.primary.entry.hs8,
+                formattedHs8: classification.primary.entry.formattedHs8,
+                commercialName: classification.primary.entry.commercialName,
+                confidence: classification.primary.confidence,
+                invoiceValue: classification.defaultAssessment.valuation.invoiceValueForeign,
+                currency: classification.defaultAssessment.valuation.currency,
+                exchangeRateBdt: classification.defaultAssessment.valuation.exchangeRateBdt,
+                incoterm: (incoterm as Incoterm) || 'CFR',
+                quantity: classification.defaultAssessment.quantity,
+                regime: classification.defaultAssessment.regime,
+                preferentialOrigin:
+                  sourceMeta.suggestedPreferentialOrigin ||
+                  classification.defaultAssessment.preferentialOrigin,
+                domesticVatMode: classification.defaultAssessment.domesticVatMode,
+                ttiPercent: classification.defaultAssessment.ttiPercent,
+                totalTaxBdt: classification.defaultAssessment.totalTaxBdt,
+                totalLandedBdt: classification.defaultAssessment.totalLandedCostBdt,
+              })
+            : Promise.resolve(null),
+        ]);
+      }
+
+      res.json({ sourceMeta, classification });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Source analysis failed' });
     }
   });
 

@@ -1,4 +1,6 @@
 import {
+  AnalyzeSourceRequest,
+  AnalyzeSourceResponse,
   BatchClassificationResult,
   BatchItemInput,
   BusinessRole,
@@ -79,6 +81,26 @@ export async function classifyProductApi(params: {
     throw new Error(data?.error || 'Classification request failed');
   }
   return data as ClassificationResult;
+}
+
+export async function analyzeSourceApi(
+  params: AnalyzeSourceRequest & { authToken?: string | null }
+): Promise<AnalyzeSourceResponse> {
+  const { authToken, ...bodyParams } = params;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+  const res = await fetch('/api/analyze-source', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(bodyParams),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || 'Source analysis request failed');
+  }
+  return data as AnalyzeSourceResponse;
 }
 
 export async function fetchTariffSections(): Promise<SectionSummary[]> {

@@ -19,12 +19,14 @@ import {
   ClassificationResult,
   CloudClassificationFeedItem,
   DomesticVatMode,
+  ExtractedSourceMetadata,
   ImporterRegime,
   Incoterm,
   LlmConfig,
   NbrTaxRates,
   PreferentialOrigin,
   QuickOptimizationAction,
+  SourceInputMode,
   SupportedCurrency,
   TariffEntry,
   TaxAssessmentInput,
@@ -33,15 +35,18 @@ import {
   ValuationMode,
 } from '@shared/types';
 import { AiSettingsModal } from '@/components/AiSettingsModal';
+import { AlternativeTradeIntelligencePanel } from '@/components/AlternativeTradeIntelligencePanel';
 import { AuthModalMode, AuthProfileModal } from '@/components/AuthProfileModal';
 import { BatchInvoiceAnalyzer } from '@/components/BatchInvoiceAnalyzer';
 import { ClassificationCard } from '@/components/ClassificationCard';
 import { ExecutiveSummaryPanel } from '@/components/ExecutiveSummaryPanel';
+import { MultimodalSourceInput } from '@/components/MultimodalSourceInput';
 import { ActiveTab, Navbar } from '@/components/Navbar';
 import { NbrTaxCalculator } from '@/components/NbrTaxCalculator';
 import { TariffExplorer } from '@/components/TariffExplorer';
 import { TaxOptimizationAdvisor } from '@/components/TaxOptimizationAdvisor';
 import {
+  analyzeSourceApi,
   classifyProductApi,
   createSharedAssessmentApi,
   deleteUserSavedQueryApi,
@@ -134,6 +139,8 @@ export const App: React.FC = () => {
   });
 
   const [queryInput, setQueryInput] = useState<string>(SAMPLE_PRODUCT_PRESETS[0].query);
+  const [inputMode, setInputMode] = useState<SourceInputMode>('text');
+  const [sourceMeta, setSourceMeta] = useState<ExtractedSourceMetadata | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -247,6 +254,73 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       setError(err?.message || 'Unable to classify product.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeAnalyzeSource = async (
+    params:
+      | {
+          mode: 'photo';
+          imageBase64: string;
+          imageMimeType: string;
+          imageFileName: string;
+          userHint?: string;
+        }
+      | {
+          mode: 'link';
+          url: string;
+          userHint?: string;
+        }
+  ) => {
+    setError(null);
+    setLoading(true);
+    setCustomOverrides({});
+
+    try {
+      const { sourceMeta: meta, classification: res } = await analyzeSourceApi({
+        ...params,
+        invoiceValue,
+        currency,
+        exchangeRateBdt,
+        incoterm,
+        quantity,
+        regime,
+        llmConfig,
+        authToken,
+      });
+
+      setSourceMeta(meta);
+      if (!meta.needsUserHint && meta.extractedTitle) {
+        setQueryInput(meta.extractedTitle);
+      }
+      if (meta.detectedCurrency) {
+        setCurrency(meta.detectedCurrency);
+        setExchangeRateBdt(DEFAULT_EXCHANGE_RATES_BDT[meta.detectedCurrency]);
+      }
+      if (meta.detectedPrice && meta.detectedPrice > 0) {
+        setInvoiceValue(Math.round(meta.detectedPrice * Math.max(1, quantity) * 100) / 100);
+      }
+      if (meta.suggestedPreferentialOrigin) {
+        setPreferentialOrigin(meta.suggestedPreferentialOrigin);
+      }
+      if (!res.primary.entry.sroEligibleCapitalMachinery && regime === 'capital_machinery') {
+        setRegime('commercial');
+      }
+      setClassification(res);
+      setSelectedCandidate(res.primary);
+      if (!meta.needsUserHint) {
+        pushRecentHistory(res);
+        refreshCloudFeed();
+        if (authToken) {
+          fetchUserSavedQueriesApi(authToken)
+            .then(setSavedQueries)
+            .catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Unable to analyze photo or product link.');
     } finally {
       setLoading(false);
     }
@@ -735,73 +809,41 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
+              <MultimodalSourceInput
+                lang={lang}
+                mode={inputMode}
+                onChangeMode={(m) => {
+                  setInputMode(m);
+                  setError(null);
+                }}
+                queryInput={queryInput}
+                onChangeQueryInput={setQueryInput}
+                onSubmitText={() => {
+                  setSourceMeta(null);
                   executeClassify(queryInput);
                 }}
-                className="mt-3.5"
-              >
-                <div className="relative">
-                  <textarea
-                    rows={3}
-                    value={queryInput}
-                    onChange={(e) => setQueryInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        executeClassify(queryInput);
-                      }
-                    }}
-                    placeholder={
-                      isBn
-                        ? 'উদাহরণ: ১০০% সুতি নিটেড টি-শার্ট ১৮০ GSM, অথবা 550W সোলার প্যানেল, অথবা ইন্ডাস্ট্রিয়াল সুইং মেশিন...'
-                        : "Example: 100% cotton knitted men's t-shirt 180 GSM, or Monocrystalline 550W solar PV panel, or ইন্ডাস্ট্রিয়াল সুইং মেশিন..."
-                    }
-                    className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50/40 p-3.5 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/15 focus:outline-none"
-                  />
-                </div>
-
-                {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  {/* Sample Product Quick-Test Pills */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="mr-1 text-[11px] font-semibold text-slate-500">
-                      {t.trySample}
-                    </span>
-                    {SAMPLE_PRODUCT_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => handlePresetClick(preset)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-60 sm:text-sm"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>{t.analyzingBtn}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4" />
-                        <span>{t.classifyBtn}</span>
-                        <CornerDownLeft className="h-3.5 w-3.5 opacity-75" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                onSubmitPhoto={(p) => executeAnalyzeSource({ mode: 'photo', ...p })}
+                onSubmitLink={(l) => executeAnalyzeSource({ mode: 'link', ...l })}
+                loading={loading}
+                error={error}
+                samplePresets={SAMPLE_PRODUCT_PRESETS.map((p) => ({
+                  label: p.label,
+                  query: p.query,
+                }))}
+                onSelectPreset={(idx) => {
+                  const p = SAMPLE_PRODUCT_PRESETS[idx];
+                  if (p) {
+                    setSourceMeta(null);
+                    handlePresetClick(p);
+                  }
+                }}
+                sourceMeta={sourceMeta}
+                onClearSourceMeta={() => setSourceMeta(null)}
+                activePreferentialOrigin={preferentialOrigin}
+                onApplyPreferentialOrigin={setPreferentialOrigin}
+                llmConfig={llmConfig}
+                onOpenAiModal={() => setAiModalOpen(true)}
+              />
 
               {/* Recent & Cloud Classification History */}
               {(recentHistory.length > 1 || cloudFeed.length > 0) && (
@@ -910,6 +952,24 @@ export const App: React.FC = () => {
                   </div>
                 </section>
 
+                {/* 4-Pillar Alternative Duty, Rebate Scope, Zero-Tax & Best Import Destination Matrix */}
+                <AlternativeTradeIntelligencePanel
+                  entry={activeEntry}
+                  classification={classification}
+                  assessmentInput={assessmentInput}
+                  assessment={liveAssessment}
+                  sourceMeta={sourceMeta}
+                  lang={lang}
+                  onApplyQuickAction={handleApplyQuickAction}
+                  onSwitchCandidate={(cand) => {
+                    setCustomOverrides({});
+                    if (!cand.entry.sroEligibleCapitalMachinery && regime === 'capital_machinery') {
+                      setRegime('commercial');
+                    }
+                    setSelectedCandidate(cand);
+                  }}
+                />
+
                 {/* Technical Duty Optimization & VAT Rebate Workbench */}
                 <TaxOptimizationAdvisor
                   entry={activeEntry}
@@ -981,6 +1041,19 @@ export const App: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            <AlternativeTradeIntelligencePanel
+              entry={activeEntry}
+              classification={classification}
+              assessmentInput={assessmentInput}
+              assessment={liveAssessment}
+              sourceMeta={sourceMeta}
+              lang={lang}
+              onApplyQuickAction={(act) => {
+                handleApplyQuickAction(act);
+                setActiveTab('classifier');
+              }}
+            />
 
             <TaxOptimizationAdvisor
               entry={activeEntry}

@@ -196,4 +196,56 @@ describe('DutyLens BD REST API Integration', () => {
     const afterListBody = await afterListRes.json();
     expect(afterListBody.savedQueries.length).toBe(0);
   });
+
+  it('POST /api/analyze-source analyzes Product Links (Alibaba/IndiaMART) & Camera/Photo uploads accurately', async () => {
+    // 1. Alibaba China Solar Panel Link -> detects APTA origin & classifies HS 8541.43.00
+    const linkRes = await fetch(`${baseUrl}/api/analyze-source`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'link',
+        url: 'https://www.alibaba.com/product-detail/550W-Monocrystalline-Solar-PV-Panel-Photovoltaic-Module_1600984215.html',
+        invoiceValue: 15000,
+        currency: 'USD',
+        exchangeRateBdt: 122,
+        incoterm: 'CFR',
+        quantity: 100,
+      }),
+    });
+    expect(linkRes.status).toBe(200);
+    const linkData = await linkRes.json();
+    expect(linkData.sourceMeta.detectedMarketplace).toBe('Alibaba.com');
+    expect(linkData.sourceMeta.suggestedPreferentialOrigin).toBe('apta');
+    expect(linkData.classification.primary.entry.hs8).toBe('85414300');
+
+    // 2. SSRF protection blocks localhost URLs
+    const ssrfRes = await fetch(`${baseUrl}/api/analyze-source`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'link',
+        url: 'http://127.0.0.1:3000/api/health',
+      }),
+    });
+    expect(ssrfRes.status).toBe(400);
+
+    // 3. Photo Upload with descriptive label/filename -> classifies Juki Industrial Sewing Machine (84522900)
+    const tinyPngBase64 =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const photoRes = await fetch(`${baseUrl}/api/analyze-source`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'photo',
+        imageBase64: tinyPngBase64,
+        imageMimeType: 'image/png',
+        imageFileName: 'Juki-DDL-8700-Industrial-Sewing-Machine.png',
+        userHint: 'Industrial sewing machine for garment factory',
+      }),
+    });
+    expect(photoRes.status).toBe(200);
+    const photoData = await photoRes.json();
+    expect(photoData.sourceMeta.sourceType).toBe('photo');
+    expect(photoData.classification.primary.entry.hs8).toBe('84522900');
+  });
 });

@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { generateOptimizationPlan } from '@shared/tax-optimizer';
+import { generateAlternativeTradeIntelligence } from '@shared/trade-intelligence';
 import {
   AppLanguage,
   TariffEntry,
@@ -50,7 +51,15 @@ export const ExecutiveSummaryPanel: React.FC<ExecutiveSummaryPanelProps> = ({
     [entry, assessmentInput, assessment]
   );
 
+  const tradeIntel = useMemo(
+    () => generateAlternativeTradeIntelligence(entry, null, assessmentInput, assessment),
+    [entry, assessmentInput, assessment]
+  );
+
   const topSavingOption = plan.opportunities[0] || null;
+  const topPort = tradeIntel.portDestinations[0] || null;
+  const topOrigin = tradeIntel.sourcingCorridors[0] || null;
+  const topZeroTax = tradeIntel.zeroTaxOptions[0] || null;
   const mandatoryNocs = entry.compliance.filter((c) => c.mandatory);
 
   const handleToggleSummarize = () => {
@@ -272,8 +281,8 @@ export const ExecutiveSummaryPanel: React.FC<ExecutiveSummaryPanelProps> = ({
             </div>
           </div>
 
-          {/* 3 Plain-Language Executive Cards */}
-          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
+          {/* 4 Plain-Language Executive Cards */}
+          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-4">
             {/* Card 1: Classification & Clearance */}
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="text-[11px] font-bold tracking-wide text-emerald-700 uppercase">
@@ -400,6 +409,43 @@ export const ExecutiveSummaryPanel: React.FC<ExecutiveSummaryPanelProps> = ({
                 ) : (
                   <>
                     Your current regime is already optimized for low duty incidence. File Mushak-9.1 by the 15th of next month to lock in full input credits.
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Card 4: Zero-Tax & Best Import Destination */}
+            <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4">
+              <div className="flex items-center gap-1 text-[11px] font-bold tracking-wide text-sky-900 uppercase">
+                <Sparkles className="h-3.5 w-3.5 text-sky-600" />
+                <span>
+                  {isBn
+                    ? '৪. জিরো-ট্যাক্স ও সেরা বন্দর গন্তব্য'
+                    : '4. Zero-Tax & Best Destination'}
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate-700">
+                {isBn ? (
+                  <>
+                    <strong>জিরো-ট্যাক্স (০%):</strong>{' '}
+                    {topZeroTax?.banglaTitle.split('(')[0].trim()} সুবিধায় সম্পূর্ণ শুল্কমুক্ত আমদানি সম্ভব।{' '}
+                    <strong>সেরা বন্দর:</strong>{' '}
+                    <span className="text-sky-900 font-semibold">
+                      {topPort?.banglaPortName.split('(')[0].trim()}
+                    </span>{' '}
+                    এবং সাশ্রয়ী সোর্সিং দেশ:{' '}
+                    <strong>{topOrigin?.banglaCountry.split('(')[0].trim()}</strong>।
+                  </>
+                ) : (
+                  <>
+                    <strong>Zero-Tax (0%):</strong> Eligible under{' '}
+                    {topZeroTax?.title.split('(')[0].trim()}.{' '}
+                    <strong>Best Entry Port:</strong>{' '}
+                    <span className="text-sky-900 font-semibold">
+                      {topPort?.portName.split('(')[0].trim()}
+                    </span>
+                    ; lowest landed-cost origin:{' '}
+                    <strong>{topOrigin?.country.split('(')[0].trim()}</strong>.
                   </>
                 )}
               </p>
